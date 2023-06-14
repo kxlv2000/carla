@@ -1319,20 +1319,20 @@ class Capturer(object):
     def save_to_disk(self):
         if self.frames:
             # Create a VideoWriter object to save the frames as a video file
-            # out = cv2.VideoWriter("out.avi", cv2.VideoWriter_fourcc(*'MJPG'), 20, (self.image_width, self.image_height))
+            out = cv2.VideoWriter("out.avi", cv2.VideoWriter_fourcc(*'MJPG'), 10, (self.image_width, self.image_height))
 
-            # for frame in self.frames[2]:
-            #     image_data = np.frombuffer(frame.raw_data, dtype=np.dtype("uint8"))
-            #     image_data = np.reshape(image_data, (frame.height, frame.width, 4))
-
-            #     # 转换为 BGR 格式以供 OpenCV 使用
-            #     image_data = image_data[:, :, :3]
-            #     out.write(image_data)
             for frame in self.frames[2]:
-                frame.save_to_disk('_out%01d/%08d' % (2, frame.frame))
+                image_data = np.frombuffer(frame.raw_data, dtype=np.dtype("uint8"))
+                image_data = np.reshape(image_data, (frame.height, frame.width, 4))
+
+                # 转换为 BGR 格式以供 OpenCV 使用
+                image_data = image_data[:, :, :3]
+                out.write(image_data)
+            # for frame in self.frames[2]:
+            #     frame.save_to_disk('_out%01d/%08d' % (2, frame.frame))
 
             # # Release the VideoWriter object
-            # out.release()
+            out.release()
             output = "\n".join(self.output_lines)
 
 # 打印输出
@@ -1371,7 +1371,7 @@ def game_loop(args):
             settings = sim_world.get_settings()
             if not settings.synchronous_mode:
                 settings.synchronous_mode = True
-                settings.fixed_delta_seconds = 0.02
+                settings.fixed_delta_seconds = 0.04
             sim_world.apply_settings(settings)
 
             traffic_manager = client.get_trafficmanager()
