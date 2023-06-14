@@ -1320,7 +1320,7 @@ class Capturer(object):
         if self.frames:
             # Create a VideoWriter object to save the frames as a video file
             
-            for i, cam in enumerate (self.frames):
+            for i, cam in self.frames.items():
                 out = cv2.VideoWriter("out%1d.avi"% i, cv2.VideoWriter_fourcc(*'MJPG'), 10, (self.image_width, self.image_height))
                 for frame in cam:
                     image_data = np.frombuffer(frame.raw_data, dtype=np.dtype("uint8"))
