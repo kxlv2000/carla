@@ -1321,11 +1321,10 @@ class Capturer(object):
             # Create a VideoWriter object to save the frames as a video file
             
             for i, cam in enumerate (self.frames):
+                out = cv2.VideoWriter("out%1d.avi"% i, cv2.VideoWriter_fourcc(*'MJPG'), 10, (self.image_width, self.image_height))
                 for frame in cam:
-                    out = cv2.VideoWriter("out%1d.avi"% i, cv2.VideoWriter_fourcc(*'MJPG'), 10, (self.image_width, self.image_height))
                     image_data = np.frombuffer(frame.raw_data, dtype=np.dtype("uint8"))
                     image_data = np.reshape(image_data, (frame.height, frame.width, 4))
-
                     # 转换为 BGR 格式以供 OpenCV 使用
                     image_data = image_data[:, :, :3]
                     out.write(image_data)
@@ -1372,7 +1371,7 @@ def game_loop(args):
             settings = sim_world.get_settings()
             if not settings.synchronous_mode:
                 settings.synchronous_mode = True
-                settings.fixed_delta_seconds = 0.04
+                settings.fixed_delta_seconds = 0.1
             sim_world.apply_settings(settings)
 
             traffic_manager = client.get_trafficmanager()
