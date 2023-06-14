@@ -304,8 +304,8 @@ class World(object):
         self.camera_manager.set_sensor(cam_index, notify=False)
         actor_type = get_actor_display_name(self.player)
         self.hud.notification(actor_type)
-        self.capturer=Capturer(self.player)
-        self.capturer.capture()
+        # self.capturer=Capturer(self.player)
+        # self.capturer.capture()
         if self.sync:
             self.world.tick()
         else:
@@ -376,8 +376,8 @@ class World(object):
                 sensor.destroy()
         if self.player is not None:
             self.player.destroy()
-        if self.capturer is not None:
-            self.capturer.destroy()
+        # if self.capturer is not None:
+        #     self.capturer.destroy()
 
 # ==============================================================================
 # -- KeyboardControl -----------------------------------------------------------
