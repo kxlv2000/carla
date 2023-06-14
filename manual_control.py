@@ -1366,8 +1366,10 @@ def game_loop(args):
         # sim_world = client.get_world()
         sim_world=client.load_world('Town10HD_Opt')
         sim_world.unload_map_layer(carla.MapLayer.Foliage)
-
+        tm = client.get_trafficmanager()
         if args.sync:
+            tm.set_synchronous_mode(True)
+            tm.set_hybrid_physics_mode(True)
             original_settings = sim_world.get_settings()
             settings = sim_world.get_settings()
             if not settings.synchronous_mode:
