@@ -1247,13 +1247,18 @@ class Capturer(object):
         bev.set_attribute('image_size_y', str(self.image_height*2))
 
         cameraT = world.spawn_actor(bev, camera_top_trans, attach_to=self.player)
-        self.sensors.append(cameraFL)
-        self.sensors.append(cameraFR)
-        self.sensors.append(cameraBL)
-        self.sensors.append(cameraBR)
-        self.sensors.append(camera)
-        self.sensors.append(cameraB)
         self.sensors.append(cameraT)
+        
+        self.sensors.append(cameraFL)
+        self.sensors.append(camera)
+        self.sensors.append(cameraFR)
+        
+        self.sensors.append(cameraBL)
+        self.sensors.append(cameraB)
+        self.sensors.append(cameraBR)
+
+
+
 
         for i, sensor in enumerate(self.sensors):
             sensor.listen(lambda image ,id=i:  self.process_image(image, id))
