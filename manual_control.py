@@ -1195,15 +1195,16 @@ class Capturer(object):
         self.sensors = []
         self.image_height=900
         self.image_width=1600
-        # self.last_frames = {
-        #     'cameraFL': None,
-        #     'cameraFR': None,
-        #     'cameraBL': None,
-        #     'cameraBR': None,
-        #     'camera': None,
-        #     'cameraB': None,
-        #     'cameraT':None
-        #     }
+        self.frames = {
+            0: [],
+            1: [],
+            2: [],
+            3: [],
+            4: [],
+            5: [],
+            6:[]
+            }
+
         self.output_lines=[]
         # self.out = cv2.VideoWriter('output.avi', cv2.VideoWriter_fourcc(*'MJPG'), 10, (self.image_width * 4, self.image_height * 2))
         
@@ -1283,7 +1284,8 @@ class Capturer(object):
         # # 转换为 BGR 格式以供 OpenCV 使用
         # image_data = image_data[:, :, :3]
         # image_data = image_data[:, :, ::-1]
-        image.save_to_disk('_out%01d/%08d' % (camera_name, image.frame))
+        # image.save_to_disk('_out%01d/%08d' % (camera_name, image.frame))
+        self.frames[camera_name].append(image)
         # 存储这一帧
         # self.last_frames[camera_name].append(image_data)
 
