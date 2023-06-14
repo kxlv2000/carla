@@ -1320,10 +1320,15 @@ class Capturer(object):
 
             # Write each frame to the video file
             for frame in self.frames[2]:
-                out.write(frame)
+                image_data = np.frombuffer(frame.raw_data, dtype=np.dtype("uint8"))
+                image_data = np.reshape(image_data, (frame.height, frame.width, 4))
+
+                # 转换为 BGR 格式以供 OpenCV 使用
+                image_data = image_data[:, :, :3]
+                out.write(image_data)
 
             # Release the VideoWriter object
-            # out.release()
+            out.release()
             output = "\n".join(self.output_lines)
 
 # 打印输出
