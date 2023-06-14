@@ -1483,7 +1483,7 @@ def main():
     argparser.add_argument(
         '--sync',
         action='store_true',
-        default=True,
+        default=False,
         help='Activate synchronous mode execution')
     args = argparser.parse_args()
 
