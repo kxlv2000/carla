@@ -1281,16 +1281,15 @@ class Capturer(object):
             image.convert(cc.CityScapesPalette)
         else: 
             image.convert(cc.Raw)
-        # image_data = np.frombuffer(image.raw_data, dtype=np.dtype("uint8"))
-        # image_data = np.reshape(image_data, (image.height, image.width, 4))
+        image_data = np.frombuffer(image.raw_data, dtype=np.dtype("uint8"))
+        image_data = np.reshape(image_data, (image.height, image.width, 4))
 
-        # # 转换为 BGR 格式以供 OpenCV 使用
-        # image_data = image_data[:, :, :3]
-        # image_data = image_data[:, :, ::-1]
-        # image.save_to_disk('_out%01d/%08d' % (camera_name, image.frame))
-        self.frames[camera_name].append(image)
+        # 转换为 BGR 格式以供 OpenCV 使用
+        image_data = image_data[:, :, :3]
+        image_data = image_data[:, :, ::-1]
+        image.save_to_disk('_out%01d/%08d' % (camera_name, image.frame))
+        # self.frames[camera_name].append(image)
         # 存储这一帧
-        # self.last_frames[camera_name].append(image_data)
 
         self.output_lines.append(f"process_image time: {time.perf_counter()- start_time} seconds")
 
@@ -1420,7 +1419,7 @@ def game_loop(args):
         if world is not None:
             world.destroy()
 
-        world.capturer.save_to_disk()
+        # world.capturer.save_to_disk()
 
         pygame.quit()
 
