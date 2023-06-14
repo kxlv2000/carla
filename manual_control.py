@@ -1255,9 +1255,9 @@ class Capturer(object):
         self.sensors.append(cameraB)
         self.sensors.append(cameraT)
 
-        i=0
-        for sensor in self.sensors:
-             sensor.listen(lambda image: self.process_image(image, i=i+1))
+        for i, sensor in enumerate(self.sensors):
+            sensor.listen(lambda image: self.process_image(image, i))
+
 
         # cameraFL.listen(lambda image: self.process_image(image, 'cameraFL'))
         # cameraFR.listen(lambda image: self.process_image(image, 'cameraFR'))
@@ -1342,7 +1342,6 @@ def game_loop(args):
     pygame.font.init()
     world = None
     original_settings = None
-    world = client.load_world('Town01_Opt', carla.MapLayer.Buildings | carla.MapLayer.ParkedVehicles)
 
 
     try:
