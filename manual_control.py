@@ -1277,7 +1277,10 @@ class Capturer(object):
     def process_image(self,image, camera_name):
         start_time = time.perf_counter()
         # 将图像数据转换为 numpy 数组
-        image.convert(cc.Raw)
+        if camera_name==0:
+            image.convert(cc.CityScapesPalette)
+        else: 
+            image.convert(cc.Raw)
         # image_data = np.frombuffer(image.raw_data, dtype=np.dtype("uint8"))
         # image_data = np.reshape(image_data, (image.height, image.width, 4))
 
@@ -1316,19 +1319,20 @@ class Capturer(object):
     def save_to_disk(self):
         if self.frames:
             # Create a VideoWriter object to save the frames as a video file
-            out = cv2.VideoWriter("out.avi", cv2.VideoWriter_fourcc(*'MJPG'), 20, (self.image_width, self.image_height))
+            # out = cv2.VideoWriter("out.avi", cv2.VideoWriter_fourcc(*'MJPG'), 20, (self.image_width, self.image_height))
 
+            # for frame in self.frames[2]:
+            #     image_data = np.frombuffer(frame.raw_data, dtype=np.dtype("uint8"))
+            #     image_data = np.reshape(image_data, (frame.height, frame.width, 4))
+
+            #     # 转换为 BGR 格式以供 OpenCV 使用
+            #     image_data = image_data[:, :, :3]
+            #     out.write(image_data)
             for frame in self.frames[2]:
-                image_data = np.frombuffer(frame.raw_data, dtype=np.dtype("uint8"))
-                image_data = np.reshape(image_data, (frame.height, frame.width, 4))
+                frame.save_to_disk('_out%01d/%08d' % (2, frame.frame))
 
-                # 转换为 BGR 格式以供 OpenCV 使用
-                image_data = image_data[:, :, :3]
-                out.write(image_data)
-
-
-            # Release the VideoWriter object
-            out.release()
+            # # Release the VideoWriter object
+            # out.release()
             output = "\n".join(self.output_lines)
 
 # 打印输出
