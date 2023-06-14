@@ -1287,7 +1287,7 @@ class Capturer(object):
         # 转换为 BGR 格式以供 OpenCV 使用
         image_data = image_data[:, :, :3]
         image_data = image_data[:, :, ::-1]
-        image.save_to_disk('_out%01d/%08d' % (camera_name, image.frame))
+        # image.save_to_disk('_out%01d/%08d' % (camera_name, image.frame))
         # self.frames[camera_name].append(image)
         # 存储这一帧
 
