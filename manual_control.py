@@ -1195,16 +1195,15 @@ class Capturer(object):
         self.sensors = []
         self.image_height=900
         self.image_width=1600
-        self.last_frames = {
-            'cameraFL': None,
-            'cameraFR': None,
-            'cameraBL': None,
-            'cameraBR': None,
-            'camera': None,
-            'cameraB': None,
-            'cameraT':None
-            }
-        self.frames = []
+        # self.last_frames = {
+        #     'cameraFL': None,
+        #     'cameraFR': None,
+        #     'cameraBL': None,
+        #     'cameraBR': None,
+        #     'camera': None,
+        #     'cameraB': None,
+        #     'cameraT':None
+        #     }
         self.output_lines=[]
         # self.out = cv2.VideoWriter('output.avi', cv2.VideoWriter_fourcc(*'MJPG'), 10, (self.image_width * 4, self.image_height * 2))
         
@@ -1228,9 +1227,7 @@ class Capturer(object):
         camera_bp.set_attribute('fov', '75')
         # Set the time in seconds between sensor captures
         camera_bp.set_attribute('sensor_tick', '0.1')
-        camera_bp.set_attribute('iso', '2000')
         camera_bp.set_attribute('motion_blur_intensity', '0')
-        camera_bp.set_attribute('shutter_speed', '4000')
 
         # We spawn the camera and attach it to our ego vehicle
         cameraFL = world.spawn_actor(camera_bp, camera_frontL_trans, attach_to=self.player)
@@ -1241,6 +1238,7 @@ class Capturer(object):
         camera_bp.set_attribute('fov', '120')
         camera = world.spawn_actor(camera_bp, camera_init_trans, attach_to=self.player)
         cameraB = world.spawn_actor(camera_bp, camera_back_trans, attach_to=self.player)
+
         bev=world.get_blueprint_library().find('sensor.camera.instance_segmentation')
         bev.set_attribute('fov', '2')
         # Set the time in seconds between sensor captures
@@ -1257,14 +1255,17 @@ class Capturer(object):
         self.sensors.append(cameraB)
         self.sensors.append(cameraT)
 
+        i=0
+        for sensor in self.sensors:
+             sensor.listen(lambda image: self.process_image(image, i=i+1))
 
-        cameraFL.listen(lambda image: self.process_image(image, 'cameraFL'))
-        cameraFR.listen(lambda image: self.process_image(image, 'cameraFR'))
-        cameraBL.listen(lambda image: self.process_image(image, 'cameraBL'))
-        cameraBR.listen(lambda image: self.process_image(image, 'cameraBR'))
-        camera.listen(lambda image: self.process_image(image, 'camera'))
-        cameraB.listen(lambda image: self.process_image(image, 'cameraB'))
-        cameraT.listen(lambda image: self.process_image(image, 'cameraT'))
+        # cameraFL.listen(lambda image: self.process_image(image, 'cameraFL'))
+        # cameraFR.listen(lambda image: self.process_image(image, 'cameraFR'))
+        # cameraBL.listen(lambda image: self.process_image(image, 'cameraBL'))
+        # cameraBR.listen(lambda image: self.process_image(image, 'cameraBR'))
+        # camera.listen(lambda image: self.process_image(image, 'camera'))
+        # cameraB.listen(lambda image: self.process_image(image, 'cameraB'))
+        # cameraT.listen(lambda image: self.process_image(image, 'cameraT'))
 
         self.output_lines.append(f"capture time: {time.perf_counter()- start_time} seconds")
     def process_image(self,image, camera_name):
@@ -1276,50 +1277,54 @@ class Capturer(object):
         # 转换为 BGR 格式以供 OpenCV 使用
         image_data = image_data[:, :, :3]
         # image_data = image_data[:, :, ::-1]
-
+        image_data.save_to_disk('_out%01d/%08d' % camera_name, image.frame)
         # 存储这一帧
-        self.last_frames[camera_name] = image_data
+        # self.last_frames[camera_name].append(image_data)
+
         self.output_lines.append(f"process_image time: {time.perf_counter()- start_time} seconds")
 
-    def combine_frames_and_write(self):
-        start_time = time.perf_counter()
-        # 首先确保我们有每个摄像头的帧
-        if all(frame is not None for frame in self.last_frames.values()):
-            # 创建一个空的大图像
-            combined_image = np.zeros((self.image_height * 2, self.image_width * 4, 3), dtype=np.uint8)
+    # def combine_frames_and_write(self):
+    #     start_time = time.perf_counter()
+    #     # 首先确保我们有每个摄像头的帧
+    #     self.frames1
+    #     if all(frame is not None for frame in self.last_frames.values()):
+    #         # 创建一个空的大图像
+    #         combined_image = np.zeros((self.image_height * 2, self.image_width * 4, 3), dtype=np.uint8)
 
-            # 将每个摄像头的帧复制到大图像的相应位置
-            combined_image[0:self.image_height, 0:self.image_width] = self.last_frames['cameraFL']
-            combined_image[0:self.image_height, self.image_width:self.image_width*2] = self.last_frames['camera']
-            combined_image[0:self.image_height, self.image_width*2:self.image_width*3] = self.last_frames['cameraFR']
-            combined_image[self.image_height:self.image_height*2, 0:self.image_width] = self.last_frames['cameraBL']
-            combined_image[self.image_height:self.image_height*2, self.image_width:self.image_width*2] = self.last_frames['cameraB']
-            combined_image[self.image_height:self.image_height*2, self.image_width*2:self.image_width*3] = self.last_frames['cameraBR']
-            combined_image[0:self.image_height*2, self.image_width*3:self.image_width*4] = self.last_frames['cameraT']
+    #         # 将每个摄像头的帧复制到大图像的相应位置
+    #         combined_image[0:self.image_height, 0:self.image_width] = self.last_frames['cameraFL']
+    #         combined_image[0:self.image_height, self.image_width:self.image_width*2] = self.last_frames['camera']
+    #         combined_image[0:self.image_height, self.image_width*2:self.image_width*3] = self.last_frames['cameraFR']
+    #         combined_image[self.image_height:self.image_height*2, 0:self.image_width] = self.last_frames['cameraBL']
+    #         combined_image[self.image_height:self.image_height*2, self.image_width:self.image_width*2] = self.last_frames['cameraB']
+    #         combined_image[self.image_height:self.image_height*2, self.image_width*2:self.image_width*3] = self.last_frames['cameraBR']
+    #         combined_image[0:self.image_height*2, self.image_width*3:self.image_width*4] = self.last_frames['cameraT']
 
-            # 将大图像写入视频文件
-            # self.out.write(combined_image)
-            self.frames.append(combined_image)
-        self.output_lines.append(f"combine_frames_and_write time: {time.perf_counter()- start_time} seconds")
+    #         # 将大图像写入视频文件
+    #         # self.out.write(combined_image)
+    #         self.frames.append(combined_image)
+    #     self.output_lines.append(f"combine_frames_and_write time: {time.perf_counter()- start_time} seconds")
 
-    def save_frames_to_disk(self, filename):
-        if self.frames:
-            # Create a VideoWriter object to save the frames as a video file
-            out = cv2.VideoWriter(filename, cv2.VideoWriter_fourcc(*'MJPG'), 10, (self.image_width * 4, self.image_height * 2))
+    # def save_frames_to_disk(self, filename):
+    #     if self.frames:
+    #         # Create a VideoWriter object to save the frames as a video file
+    #         out = cv2.VideoWriter(filename, cv2.VideoWriter_fourcc(*'MJPG'), 10, (self.image_width * 4, self.image_height * 2))
 
-            # Write each frame to the video file
-            i=0
-            for frame in self.frames:
-                out.write(frame)
-                print(i)
-                i=i+1
+    #         # Write each frame to the video file
+    #         i=0
+    #         for frame in self.frames:
+    #             out.write(frame)
+    #             print(i)
+    #             i=i+1
 
-            # Release the VideoWriter object
-            out.release()
-            output = "\n".join(self.output_lines)
+    #         # Release the VideoWriter object
+    #         out.release()
+    #         output = "\n".join(self.output_lines)
 
-# 打印输出
-            print(output)
+# # 打印输出
+#             print(output)
+
+    
     def destroy(self):
         for sensor in self.sensors:
             if sensor is not None:
@@ -1382,7 +1387,7 @@ def game_loop(args):
                 return
             world.tick(clock)
             world.render(display)
-            world.capturer.combine_frames_and_write()
+            # world.capturer.combine_frames_and_write()
 
             pygame.display.flip()
 
@@ -1396,7 +1401,7 @@ def game_loop(args):
 
         if world is not None:
             world.destroy()
-        world.capturer.save_frames_to_disk("out.avi")
+        # world.capturer.save_frames_to_disk("out.avi")
 
         pygame.quit()
 
