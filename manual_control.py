@@ -251,12 +251,14 @@ class World(object):
         cam_index = self.camera_manager.index if self.camera_manager is not None else 0
         cam_pos_index = self.camera_manager.transform_index if self.camera_manager is not None else 0
         # Get a random blueprint.
-        vehicle_blueprints = self.world.get_blueprint_library().filter('*vehicle*')
-        spawn_points = self.world.get_map().get_spawn_points()
-        for i in range(0,50):
-            self.world.try_spawn_actor(random.choice(vehicle_blueprints), random.choice(spawn_points))
-        for vehicle in self.world.get_actors().filter('*vehicle*'):
-            vehicle.set_autopilot(True)
+
+        # vehicle_blueprints = self.world.get_blueprint_library().filter('*vehicle*')
+        # spawn_points = self.world.get_map().get_spawn_points()
+        # for i in range(0,50):
+        #     self.world.try_spawn_actor(random.choice(vehicle_blueprints), random.choice(spawn_points))
+        # for vehicle in self.world.get_actors().filter('*vehicle*'):
+        #     vehicle.set_autopilot(True)
+
         blueprint = random.choice(self.world.get_blueprint_library().filter(self._actor_filter))
         blueprint.set_attribute('role_name', 'hero')
         if blueprint.has_attribute('color'):
@@ -1362,7 +1364,7 @@ def game_loop(args):
         client.set_timeout(20.0)
 
         # sim_world = client.get_world()
-        sim_world=client.load_world('Town01_Opt')
+        sim_world=client.load_world('Town10HD_Opt')
         sim_world.unload_map_layer(carla.MapLayer.Foliage)
 
         if args.sync:
