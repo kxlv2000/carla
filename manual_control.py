@@ -1362,12 +1362,11 @@ def game_loop(args):
     try:
         client = carla.Client(args.host, args.port)
         client.set_timeout(20.0)
-        traffic_manager = client.get_trafficmanager()
-        traffic_manager.set_synchronous_mode(True)
 
         # sim_world = client.get_world()
         sim_world=client.load_world('Town10HD_Opt')
         sim_world.unload_map_layer(carla.MapLayer.Foliage)
+
         if args.sync:
             original_settings = sim_world.get_settings()
             settings = sim_world.get_settings()
@@ -1376,8 +1375,8 @@ def game_loop(args):
                 settings.fixed_delta_seconds = 0.1
             sim_world.apply_settings(settings)
 
-            # traffic_manager = client.get_trafficmanager()
-            # traffic_manager.set_synchronous_mode(True)
+            traffic_manager = client.get_trafficmanager()
+            traffic_manager.set_synchronous_mode(True)
 
         if args.autopilot and not sim_world.get_settings().synchronous_mode:
             print("WARNING: You are currently in asynchronous mode and could "
