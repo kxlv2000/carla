@@ -1271,13 +1271,14 @@ class Capturer(object):
     def process_image(self,image, camera_name):
         start_time = time.perf_counter()
         # 将图像数据转换为 numpy 数组
-        image_data = np.frombuffer(image.raw_data, dtype=np.dtype("uint8"))
-        image_data = np.reshape(image_data, (image.height, image.width, 4))
+        image.convert(cc.Raw)
+        # image_data = np.frombuffer(image.raw_data, dtype=np.dtype("uint8"))
+        # image_data = np.reshape(image_data, (image.height, image.width, 4))
 
-        # 转换为 BGR 格式以供 OpenCV 使用
-        image_data = image_data[:, :, :3]
+        # # 转换为 BGR 格式以供 OpenCV 使用
+        # image_data = image_data[:, :, :3]
         # image_data = image_data[:, :, ::-1]
-        image_data.save_to_disk('_out%01d/%08d' % camera_name, image.frame)
+        image.save_to_disk('_out%01d/%08d' % camera_name, image.frame)
         # 存储这一帧
         # self.last_frames[camera_name].append(image_data)
 
