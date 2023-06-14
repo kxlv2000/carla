@@ -1321,7 +1321,7 @@ class Capturer(object):
             # Create a VideoWriter object to save the frames as a video file
             
             for i, cam in self.frames.items():
-                out = cv2.VideoWriter("out%1d.avi"% i, cv2.VideoWriter_fourcc(*'MJPG'), 10, (self.image_width, self.image_height))
+                out = cv2.VideoWriter("out%1d.avi"% i, cv2.VideoWriter_fourcc(*'MJPG'), 10, (cam[0].width, cam[0].height))
                 for frame in cam:
                     image_data = np.frombuffer(frame.raw_data, dtype=np.dtype("uint8"))
                     image_data = np.reshape(image_data, (frame.height, frame.width, 4))
@@ -1363,7 +1363,7 @@ def game_loop(args):
         client.set_timeout(20.0)
 
         # sim_world = client.get_world()
-        sim_world=client.load_world('Town01_Opt')
+        sim_world=client.load_world('Town10_Opt')
         sim_world.unload_map_layer(carla.MapLayer.Foliage)
 
         if args.sync:
