@@ -1313,19 +1313,16 @@ class Capturer(object):
     #         self.frames.append(combined_image)
     #     self.output_lines.append(f"combine_frames_and_write time: {time.perf_counter()- start_time} seconds")
 
-    def print_time(self):
-    #     if self.frames:
-    #         # Create a VideoWriter object to save the frames as a video file
-    #         out = cv2.VideoWriter(filename, cv2.VideoWriter_fourcc(*'MJPG'), 10, (self.image_width * 4, self.image_height * 2))
+    def save_to_disk(self):
+        if self.frames:
+            # Create a VideoWriter object to save the frames as a video file
+            out = cv2.VideoWriter("out.avi", cv2.VideoWriter_fourcc(*'MJPG'), 50, (self.image_width * 4, self.image_height * 2))
 
-    #         # Write each frame to the video file
-    #         i=0
-    #         for frame in self.frames:
-    #             out.write(frame)
-    #             print(i)
-    #             i=i+1
+            # Write each frame to the video file
+            for frame in self.frames[2]:
+                out.write(frame)
 
-    #         # Release the VideoWriter object
+            # Release the VideoWriter object
             # out.release()
             output = "\n".join(self.output_lines)
 
@@ -1365,7 +1362,7 @@ def game_loop(args):
             settings = sim_world.get_settings()
             if not settings.synchronous_mode:
                 settings.synchronous_mode = True
-                settings.fixed_delta_seconds = 0.1
+                settings.fixed_delta_seconds = 0.02
             sim_world.apply_settings(settings)
 
             traffic_manager = client.get_trafficmanager()
