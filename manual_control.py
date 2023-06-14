@@ -1420,7 +1420,7 @@ def game_loop(args):
         if world is not None:
             world.destroy()
 
-        world.capturer.print_time()
+        world.capturer.save_to_disk()
 
         pygame.quit()
 
