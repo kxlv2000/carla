@@ -1239,7 +1239,7 @@ class Capturer(object):
         camera = world.spawn_actor(camera_bp, camera_init_trans, attach_to=self.player)
         cameraB = world.spawn_actor(camera_bp, camera_back_trans, attach_to=self.player)
 
-        bev=world.get_blueprint_library().find('sensor.camera.instance_segmentation')
+        bev=world.get_blueprint_library().find('sensor.camera.semantic_segmentation')
         bev.set_attribute('fov', '2')
         # Set the time in seconds between sensor captures
         bev.set_attribute('sensor_tick', '0.1')
@@ -1342,12 +1342,17 @@ def game_loop(args):
     pygame.font.init()
     world = None
     original_settings = None
+    world = client.load_world('Town01_Opt', carla.MapLayer.Buildings | carla.MapLayer.ParkedVehicles)
+
 
     try:
         client = carla.Client(args.host, args.port)
         client.set_timeout(20.0)
 
-        sim_world = client.get_world()
+        # sim_world = client.get_world()
+        sim_world=client.load_world('Town01_Opt')
+        sim_world.unload_map_layer(carla.MapLayer.Foliage)
+
         if args.sync:
             original_settings = sim_world.get_settings()
             settings = sim_world.get_settings()
@@ -1433,6 +1438,7 @@ def main():
     argparser.add_argument(
         '-a', '--autopilot',
         action='store_true',
+        default=True,
         help='enable autopilot')
     argparser.add_argument(
         '--res',
@@ -1462,6 +1468,7 @@ def main():
     argparser.add_argument(
         '--sync',
         action='store_true',
+        default=True,
         help='Activate synchronous mode execution')
     args = argparser.parse_args()
 
