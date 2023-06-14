@@ -1248,7 +1248,7 @@ class Capturer(object):
 
         cameraT = world.spawn_actor(bev, camera_top_trans, attach_to=self.player)
         self.sensors.append(cameraT)
-        
+
         self.sensors.append(cameraFL)
         self.sensors.append(camera)
         self.sensors.append(cameraFR)
@@ -1311,7 +1311,7 @@ class Capturer(object):
     #         self.frames.append(combined_image)
     #     self.output_lines.append(f"combine_frames_and_write time: {time.perf_counter()- start_time} seconds")
 
-    # def save_frames_to_disk(self, filename):
+    def print_time(self, filename):
     #     if self.frames:
     #         # Create a VideoWriter object to save the frames as a video file
     #         out = cv2.VideoWriter(filename, cv2.VideoWriter_fourcc(*'MJPG'), 10, (self.image_width * 4, self.image_height * 2))
@@ -1324,11 +1324,11 @@ class Capturer(object):
     #             i=i+1
 
     #         # Release the VideoWriter object
-    #         out.release()
-    #         output = "\n".join(self.output_lines)
+            # out.release()
+            output = "\n".join(self.output_lines)
 
-# # 打印输出
-#             print(output)
+# 打印输出
+            print(output)
 
     
     def destroy(self):
@@ -1411,7 +1411,7 @@ def game_loop(args):
 
         if world is not None:
             world.destroy()
-        # world.capturer.save_frames_to_disk("out.avi")
+        world.capturer.print_time()
 
         pygame.quit()
 
