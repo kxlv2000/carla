@@ -1311,7 +1311,7 @@ class Capturer(object):
     #         self.frames.append(combined_image)
     #     self.output_lines.append(f"combine_frames_and_write time: {time.perf_counter()- start_time} seconds")
 
-    def print_time(self, filename):
+    def print_time(self):
     #     if self.frames:
     #         # Create a VideoWriter object to save the frames as a video file
     #         out = cv2.VideoWriter(filename, cv2.VideoWriter_fourcc(*'MJPG'), 10, (self.image_width * 4, self.image_height * 2))
@@ -1411,6 +1411,7 @@ def game_loop(args):
 
         if world is not None:
             world.destroy()
+
         world.capturer.print_time()
 
         pygame.quit()
