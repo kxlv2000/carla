@@ -1256,7 +1256,7 @@ class Capturer(object):
         self.sensors.append(cameraT)
 
         for i, sensor in enumerate(self.sensors):
-            sensor.listen(lambda image: self.process_image(image, i))
+            sensor.listen(lambda image ,id=i:  self.process_image(image, id))
 
 
         # cameraFL.listen(lambda image: self.process_image(image, 'cameraFL'))
@@ -1278,7 +1278,7 @@ class Capturer(object):
         # # 转换为 BGR 格式以供 OpenCV 使用
         # image_data = image_data[:, :, :3]
         # image_data = image_data[:, :, ::-1]
-        image.save_to_disk('_out%01d/%08d' % camera_name, image.frame)
+        image.save_to_disk('_out%01d/%08d' % (camera_name, image.frame))
         # 存储这一帧
         # self.last_frames[camera_name].append(image_data)
 
