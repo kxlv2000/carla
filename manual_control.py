@@ -1319,20 +1319,21 @@ class Capturer(object):
     def save_to_disk(self):
         if self.frames:
             # Create a VideoWriter object to save the frames as a video file
-            out = cv2.VideoWriter("out.avi", cv2.VideoWriter_fourcc(*'MJPG'), 10, (self.image_width, self.image_height))
+            
+            for i, cam in enumerate (self.frames):
+                for frame in cam:
+                    out = cv2.VideoWriter("out%1d.avi"% i, cv2.VideoWriter_fourcc(*'MJPG'), 10, (self.image_width, self.image_height))
+                    image_data = np.frombuffer(frame.raw_data, dtype=np.dtype("uint8"))
+                    image_data = np.reshape(image_data, (frame.height, frame.width, 4))
 
-            for frame in self.frames[2]:
-                image_data = np.frombuffer(frame.raw_data, dtype=np.dtype("uint8"))
-                image_data = np.reshape(image_data, (frame.height, frame.width, 4))
-
-                # 转换为 BGR 格式以供 OpenCV 使用
-                image_data = image_data[:, :, :3]
-                out.write(image_data)
+                    # 转换为 BGR 格式以供 OpenCV 使用
+                    image_data = image_data[:, :, :3]
+                    out.write(image_data)
             # for frame in self.frames[2]:
             #     frame.save_to_disk('_out%01d/%08d' % (2, frame.frame))
 
             # # Release the VideoWriter object
-            out.release()
+                out.release()
             output = "\n".join(self.output_lines)
 
 # 打印输出
