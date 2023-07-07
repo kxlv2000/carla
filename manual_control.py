@@ -61,15 +61,21 @@ from __future__ import print_function
 # -- find carla module ---------------------------------------------------------
 # ==============================================================================
 
-
+import threading
 import glob
 import os
 import sys
+import csv
+import generate_traffic
+import shutil
+from threading import Thread
+from queue import Queue
 
-import time
-
-import cv2
 import numpy as np
+import PIL.Image as Image
+from pascal_voc_writer import Writer
+
+
 
 
 
@@ -200,6 +206,7 @@ class World(object):
     def __init__(self, carla_world, hud, args):
         self.world = carla_world
         self.sync = args.sync
+        self.frame = 0
         self.actor_role_name = args.rolename
         try:
             self.map = self.world.get_map()
@@ -251,16 +258,9 @@ class World(object):
         cam_index = self.camera_manager.index if self.camera_manager is not None else 0
         cam_pos_index = self.camera_manager.transform_index if self.camera_manager is not None else 0
         # Get a random blueprint.
-
-        vehicle_blueprints = self.world.get_blueprint_library().filter('*vehicle*')
-        spawn_points = self.world.get_map().get_spawn_points()
-        for i in range(0,50):
-            self.world.try_spawn_actor(random.choice(vehicle_blueprints), random.choice(spawn_points))
-        for vehicle in self.world.get_actors().filter('*vehicle*'):
-            vehicle.set_autopilot(True)
-
-        blueprint = random.choice(self.world.get_blueprint_library().filter(self._actor_filter))
-        blueprint.set_attribute('role_name', 'hero')
+        # blueprint = random.choice(get_actor_blueprints(self.world, self._actor_filter, self._actor_generation))
+        blueprint = self.world.get_blueprint_library().find('vehicle.mini.cooper_s') 
+        blueprint.set_attribute('role_name', self.actor_role_name)
         if blueprint.has_attribute('color'):
             color = random.choice(blueprint.get_attribute('color').recommended_values)
             blueprint.set_attribute('color', color)
@@ -289,9 +289,9 @@ class World(object):
                 print('There are no spawn points available in your map/town.')
                 print('Please add some Vehicle Spawn Point to your UE4 scene.')
                 sys.exit(1)
-            spawn_points = self.map.get_spawn_points()
-            spawn_point = random.choice(spawn_points) if spawn_points else carla.Transform()
-            self.player = self.world.try_spawn_actor(blueprint, spawn_point)
+
+            spawn_points = self.world.get_map().get_spawn_points()            
+            self.player = self.world.try_spawn_actor(blueprint, spawn_points[32])
             self.show_vehicle_telemetry = False
             self.modify_vehicle_physics(self.player)
         # Set up the sensors.
@@ -304,8 +304,8 @@ class World(object):
         self.camera_manager.set_sensor(cam_index, notify=False)
         actor_type = get_actor_display_name(self.player)
         self.hud.notification(actor_type)
-        # self.capturer=Capturer(self.player)
-        # self.capturer.capture()
+        
+
         if self.sync:
             self.world.tick()
         else:
@@ -335,10 +335,14 @@ class World(object):
 
     def toggle_radar(self):
         if self.radar_sensor is None:
-            self.radar_sensor = RadarSensor(self.player)
+            # self.radar_sensor = RadarSensor(self.player)
+            self.capturer=Capturer(self.player)
+            self.capturer.capture()
         elif self.radar_sensor.sensor is not None:
             self.radar_sensor.sensor.destroy()
-            self.radar_sensor = None
+            self.capturer.destroy()
+            self.capturer = None
+            self.radar_senspgor = None
 
     def modify_vehicle_physics(self, actor):
         #If actor is not a vehicle, we cannot use the physics control
@@ -351,6 +355,7 @@ class World(object):
 
     def tick(self, clock):
         self.hud.tick(self, clock)
+        self.frame+=1
 
     def render(self, display):
         self.camera_manager.render(display)
@@ -376,8 +381,8 @@ class World(object):
                 sensor.destroy()
         if self.player is not None:
             self.player.destroy()
-        # if self.capturer is not None:
-        #     self.capturer.destroy()
+        if self.capturer is not None:
+            self.capturer.destroy()
 
 # ==============================================================================
 # -- KeyboardControl -----------------------------------------------------------
@@ -930,6 +935,10 @@ class GnssSensor(object):
         self.lat = event.latitude
         self.lon = event.longitude
 
+        with open('out/GNSS.csv', 'a') as f:
+            writer = csv.writer(f)
+            writer.writerow([event.frame, event.latitude, event.longitude, event.altitude])
+
 
 # ==============================================================================
 # -- IMUSensor -----------------------------------------------------------------
@@ -950,8 +959,7 @@ class IMUSensor(object):
         # We need to pass the lambda a weak reference to self to avoid circular
         # reference.
         weak_self = weakref.ref(self)
-        self.sensor.listen(
-            lambda sensor_data: IMUSensor._IMU_callback(weak_self, sensor_data))
+        self.sensor.listen(lambda sensor_data: IMUSensor._IMU_callback(weak_self, sensor_data))
 
     @staticmethod
     def _IMU_callback(weak_self, sensor_data):
@@ -968,6 +976,9 @@ class IMUSensor(object):
             max(limits[0], min(limits[1], math.degrees(sensor_data.gyroscope.y))),
             max(limits[0], min(limits[1], math.degrees(sensor_data.gyroscope.z))))
         self.compass = math.degrees(sensor_data.compass)
+        with open('out/IMU.csv', 'a') as f:
+            writer = csv.writer(f)
+            writer.writerow([sensor_data.frame, sensor_data.accelerometer, sensor_data.gyroscope, sensor_data.compass])
 
 
 # ==============================================================================
@@ -977,65 +988,98 @@ class IMUSensor(object):
 
 class RadarSensor(object):
     def __init__(self, parent_actor):
+        self.sensor_name = {
+            0: 'F',
+            1: 'FL',
+            2: 'FR',
+            3: 'RL',
+            4: 'RR',
+            }
         self.sensor = None
+        self.sensors = []
         self._parent = parent_actor
         bound_x = 0.5 + self._parent.bounding_box.extent.x
         bound_y = 0.5 + self._parent.bounding_box.extent.y
         bound_z = 0.5 + self._parent.bounding_box.extent.z
 
-        self.velocity_range = 7.5 # m/s
-        world = self._parent.get_world()
-        self.debug = world.debug
-        bp = world.get_blueprint_library().find('sensor.other.radar')
-        bp.set_attribute('horizontal_fov', str(35))
-        bp.set_attribute('vertical_fov', str(20))
-        self.sensor = world.spawn_actor(
-            bp,
-            carla.Transform(
-                carla.Location(x=bound_x + 0.05, z=bound_z+0.05),
-                carla.Rotation(pitch=5)),
-            attach_to=self._parent)
+        self.velocity_range = 75 # m/s
+        self.world = self._parent.get_world()
+        self.debug = self.world.debug
+        bp = self.world.get_blueprint_library().find('sensor.other.radar')
+        bp.set_attribute('horizontal_fov', '80')
+        bp.set_attribute('vertical_fov', '14')
+        bp.set_attribute('range', '300')
+        bp.set_attribute('points_per_second', '10240')
+        self.sensors.append(self.world.spawn_actor(bp,carla.Transform(carla.Location(x=bound_x + 0.05, z=0.5),carla.Rotation(pitch=3)),attach_to=self._parent))
+        bp.set_attribute('horizontal_fov', '120')
+        bp.set_attribute('vertical_fov', '14')
+        self.sensors.append(self.world.spawn_actor(bp,carla.Transform(carla.Location(x=bound_x - 1, y=-bound_y/2-0.05, z=0.5),carla.Rotation(yaw=-45,pitch=3)),attach_to=self._parent))
+        self.sensors.append(self.world.spawn_actor(bp,carla.Transform(carla.Location(x=bound_x - 1, y=bound_y/2+0.05, z=0.5),carla.Rotation(yaw=45,pitch=3)),attach_to=self._parent))
+        self.sensors.append(self.world.spawn_actor(bp,carla.Transform(carla.Location(x=bound_x - 5 ,y=-bound_y/2-0.05, z=0.5),carla.Rotation(yaw=225,pitch=3)),attach_to=self._parent))
+        self.sensors.append(self.world.spawn_actor(bp,carla.Transform(carla.Location(x=bound_x - 5, y=bound_y/2+0.05, z=0.5),carla.Rotation(yaw=135,pitch=3)),attach_to=self._parent))
+
         # We need a weak reference to self to avoid circular reference.
         weak_self = weakref.ref(self)
-        self.sensor.listen(
-            lambda radar_data: RadarSensor._Radar_callback(weak_self, radar_data))
+
+        for i, sensor in enumerate(self.sensors):
+            sensor.listen(lambda radar_data, id=i: RadarSensor._Radar_callback(weak_self, radar_data,self.sensor_name[id]))
 
     @staticmethod
-    def _Radar_callback(weak_self, radar_data):
+    def _Radar_callback(weak_self, radar_data,i):
         self = weak_self()
         if not self:
             return
         # To get a numpy [[vel, altitude, azimuth, depth],...[,,,]]:
         # points = np.frombuffer(radar_data.raw_data, dtype=np.dtype('f4'))
         # points = np.reshape(points, (len(radar_data), 4))
-
-        current_rot = radar_data.transform.rotation
-        for detect in radar_data:
-            azi = math.degrees(detect.azimuth)
-            alt = math.degrees(detect.altitude)
-            # The 0.25 adjusts a bit the distance so the dots can
-            # be properly seen
-            fw_vec = carla.Vector3D(x=detect.depth - 0.25)
-            carla.Transform(
-                carla.Location(),
-                carla.Rotation(
-                    pitch=current_rot.pitch + alt,
-                    yaw=current_rot.yaw + azi,
-                    roll=current_rot.roll)).transform(fw_vec)
-
-            def clamp(min_v, max_v, value):
-                return max(min_v, min(value, max_v))
-
-            norm_velocity = detect.velocity / self.velocity_range # range [-1, 1]
-            r = int(clamp(0.0, 1.0, 1.0 - norm_velocity) * 255.0)
-            g = int(clamp(0.0, 1.0, 1.0 - abs(norm_velocity)) * 255.0)
-            b = int(abs(clamp(- 1.0, 0.0, - 1.0 - norm_velocity)) * 255.0)
-            self.debug.draw_point(
-                radar_data.transform.location + fw_vec,
-                size=0.075,
-                life_time=0.06,
-                persistent_lines=False,
-                color=carla.Color(r, g, b))
+        os.makedirs('out/Radar{}'.format(i), exist_ok=True)  
+        world_snapshot = self.world.get_snapshot()
+        timestamp = world_snapshot.timestamp
+        current_tick = timestamp.frame
+        file_name = 'out/Radar{}/{:08d}.csv'.format(i,current_tick)
+        with open(file_name, 'w') as f:
+            writer = csv.writer(f)
+            current_rot = radar_data.transform.rotation
+            for detect in radar_data:
+                azi = math.degrees(detect.azimuth)
+                alt = math.degrees(detect.altitude)
+                # The 0.25 adjusts a bit the distance so the dots can
+                # be properly seen
+                fw_vec = carla.Vector3D(x=detect.depth - 0.25)
+                carla.Transform(
+                    carla.Location(),
+                    carla.Rotation(
+                        pitch=current_rot.pitch + alt,
+                        yaw=current_rot.yaw + azi,
+                        roll=current_rot.roll)).transform(fw_vec)
+                
+                def clamp(min_v, max_v, value):
+                    return max(min_v, min(value, max_v))
+        
+                norm_velocity = detect.velocity / self.velocity_range # range [-1, 1]
+                writer.writerow([azi, alt, detect.depth, detect.velocity])
+                if False:
+                    r,g,b=0,0,0
+                    if str(i)=='F':
+                        r=254
+                    elif str(i)=='FL':
+                        g=254
+                    elif str(i)=='FR':
+                        b=254
+                    elif str(i)=='RL':
+                        r=254
+                        g=254
+                    elif str(i)=='RR':
+                        r=254
+                        b=254
+                    self.debug.draw_point(
+                        radar_data.transform.location + fw_vec,
+                        size=0.03,
+                        life_time=0.3,
+                        persistent_lines=True,
+                        
+                            color=carla.Color(r,g,b))
+                   
 
 # ==============================================================================
 # -- CameraManager -------------------------------------------------------------
@@ -1056,6 +1100,7 @@ class CameraManager(object):
 
         if not self._parent.type_id.startswith("walker.pedestrian"):
             self._camera_transforms = [
+                (carla.Transform(carla.Location(x=-5*bound_x, y=+0.0*bound_y, z=7*bound_z), carla.Rotation(pitch=5.0)), Attachment.SpringArm),
                 (carla.Transform(carla.Location(x=-2.0*bound_x, y=+0.0*bound_y, z=2.0*bound_z), carla.Rotation(pitch=8.0)), Attachment.SpringArm),
                 (carla.Transform(carla.Location(x=+0.8*bound_x, y=+0.0*bound_y, z=1.3*bound_z)), Attachment.Rigid),
                 (carla.Transform(carla.Location(x=+1.9*bound_x, y=+1.0*bound_y, z=1.2*bound_z)), Attachment.SpringArm),
@@ -1063,6 +1108,7 @@ class CameraManager(object):
                 (carla.Transform(carla.Location(x=-1.0, y=-1.0*bound_y, z=0.4*bound_z)), Attachment.Rigid)]
         else:
             self._camera_transforms = [
+                (carla.Transform(carla.Location(x=-8.0, z=4.0), carla.Rotation(pitch=6.0)), Attachment.SpringArm),
                 (carla.Transform(carla.Location(x=-2.5, z=0.0), carla.Rotation(pitch=-8.0)), Attachment.SpringArm),
                 (carla.Transform(carla.Location(x=1.6, z=1.7)), Attachment.Rigid),
                 (carla.Transform(carla.Location(x=2.5, y=0.5, z=0.0), carla.Rotation(pitch=-8.0)), Attachment.SpringArm),
@@ -1079,7 +1125,7 @@ class CameraManager(object):
             ['sensor.camera.semantic_segmentation', cc.CityScapesPalette, 'Camera Semantic Segmentation (CityScapes Palette)', {}],
             ['sensor.camera.instance_segmentation', cc.CityScapesPalette, 'Camera Instance Segmentation (CityScapes Palette)', {}],
             ['sensor.camera.instance_segmentation', cc.Raw, 'Camera Instance Segmentation (Raw)', {}],
-            ['sensor.lidar.ray_cast', None, 'Lidar (Ray-Cast)', {'range': '50'}],
+            ['sensor.lidar.ray_cast', None, 'Lidar (Ray-Cast)', {'range': '100','channels':'32','points_per_second':'1390000','rotation_frequency':'20'}],
             ['sensor.camera.dvs', cc.Raw, 'Dynamic Vision Sensor', {}],
             ['sensor.camera.rgb', cc.Raw, 'Camera RGB Distorted',
                 {'lens_circle_multiplier': '3.0',
@@ -1188,165 +1234,284 @@ class CameraManager(object):
             array = array[:, :, ::-1]
             self.surface = pygame.surfarray.make_surface(array.swapaxes(0, 1))
         if self.recording:
-            image.save_to_disk('/media/avt/PortableSSD/carla/_out/%08d' % image.frame)
+            image.save_to_disk('_out/%08d' % image.frame)
 
             
 class Capturer(object):
     def __init__(self, play):
         self.player=play
-        self.sensors = []
-        self.image_height=900
-        self.image_width=1600
-        self.frames = {
-            0: [],
-            1: [],
-            2: [],
-            3: [],
-            4: [],
-            5: [],
-            6:[]
-            }
+        self.sensors = {}
+        self.world=self.player.get_world()
+        self.image_height=450
+        self.image_width=800
+        self.light_bbox_set = self.world.get_level_bbs(carla.CityObjectLabel.TrafficLight)
+        self.sign_bbox_set=self.world.get_level_bbs(carla.CityObjectLabel.TrafficSigns)
 
-        self.output_lines=[]
-        # self.out = cv2.VideoWriter('output.avi', cv2.VideoWriter_fourcc(*'MJPG'), 10, (self.image_width * 4, self.image_height * 2))
-        
-    
+
+
 
     def capture(self):
-        start_time = time.perf_counter()
-        world=self.player.get_world()
-        camera_init_trans = carla.Transform(carla.Location(z=2))
+    
+#ypr[-8.95656678e+01  6.36110934e-15 -8.81782047e+01] [-0.07426355  1.70099723 -2.50124981]
+
+
+        camera_init_trans = carla.Transform(carla.Location(x=2.1066,z=1.45),carla.Rotation(1.70099723,-0.07426355 , -2.50124981))
         camera_back_trans = carla.Transform(carla.Location(x=-2,z=2),carla.Rotation(yaw=180))
         camera_frontL_trans = carla.Transform(carla.Location(y=-1,z=2),carla.Rotation(yaw=-55))
         camera_frontR_trans = carla.Transform(carla.Location(y=1,z=2),carla.Rotation(yaw=55))
         camera_backL_trans = carla.Transform(carla.Location(x=-1,y=-1,z=2),carla.Rotation(yaw=-110))
         camera_backR_trans = carla.Transform(carla.Location(x=-1,y=1,z=2),carla.Rotation(yaw=110))
         camera_top_trans = carla.Transform(carla.Location(z=1000),carla.Rotation(pitch=270))
+        lidar_trans =carla.Transform(carla.Location(x=1.15,z=2.1),carla.Rotation(6.36110934e-15, 90-8.95656678e+01, 90-8.81782047e+01))
+
 
         # We create the camera through a blueprint that defines its properties
-        camera_bp = world.get_blueprint_library().find('sensor.camera.rgb')
+        camera_bp =self. world.get_blueprint_library().find('sensor.camera.rgb')
         camera_bp.set_attribute('image_size_x', str(self.image_width))
         camera_bp.set_attribute('image_size_y', str(self.image_height))
         camera_bp.set_attribute('fov', '75')
-        # Set the time in seconds between sensor captures
-        camera_bp.set_attribute('sensor_tick', '0.1')
         camera_bp.set_attribute('motion_blur_intensity', '0')
-
-        # We spawn the camera and attach it to our ego vehicle
-        cameraFL = world.spawn_actor(camera_bp, camera_frontL_trans, attach_to=self.player)
-        cameraFR = world.spawn_actor(camera_bp, camera_frontR_trans, attach_to=self.player)
-        cameraBL = world.spawn_actor(camera_bp, camera_backL_trans, attach_to=self.player)
-        cameraBR = world.spawn_actor(camera_bp, camera_backR_trans, attach_to=self.player)
-
+        camera_bp.set_attribute('sensor_tick', '0.1')
+        cameraFL = self.world.spawn_actor(camera_bp, camera_frontL_trans, attach_to=self.player)
+        cameraFR = self.world.spawn_actor(camera_bp, camera_frontR_trans, attach_to=self.player)
+        cameraBL = self.world.spawn_actor(camera_bp, camera_backL_trans, attach_to=self.player)
+        cameraBR = self.world.spawn_actor(camera_bp, camera_backR_trans, attach_to=self.player)
         camera_bp.set_attribute('fov', '120')
-        camera = world.spawn_actor(camera_bp, camera_init_trans, attach_to=self.player)
-        cameraB = world.spawn_actor(camera_bp, camera_back_trans, attach_to=self.player)
+        camera = self.world.spawn_actor(camera_bp, camera_init_trans, attach_to=self.player)
+        cameraB = self.world.spawn_actor(camera_bp, camera_back_trans, attach_to=self.player)
 
-        bev=world.get_blueprint_library().find('sensor.camera.semantic_segmentation')
-        bev.set_attribute('fov', '2')
-        # Set the time in seconds between sensor captures
-        bev.set_attribute('sensor_tick', '0.1')
-        bev.set_attribute('image_size_x', str(self.image_width))
-        bev.set_attribute('image_size_y', str(self.image_height*2))
+        bev_bp= self.world.get_blueprint_library().find('sensor.camera.semantic_segmentation')
+        bev_bp.set_attribute('fov', '2')
+        bev_bp.set_attribute('image_size_x', str(self.image_width))
+        bev_bp.set_attribute('image_size_y', str(self.image_height*2))
+        bev = self.world.spawn_actor(bev_bp, camera_top_trans, attach_to=self.player)
 
-        cameraT = world.spawn_actor(bev, camera_top_trans, attach_to=self.player)
-        self.sensors.append(cameraT)
+        lidar_bp = self.world.get_blueprint_library().find('sensor.lidar.ray_cast')
+        lidar_bp.set_attribute('range','100')
+        lidar_bp.set_attribute('points_per_second','1390000')
+        lidar_bp.set_attribute('rotation_frequency','20')
+        lidar= self.world.spawn_actor(lidar_bp, lidar_trans, attach_to=self.player)
 
-        self.sensors.append(cameraFL)
-        self.sensors.append(camera)
-        self.sensors.append(cameraFR)
-        
-        self.sensors.append(cameraBL)
-        self.sensors.append(cameraB)
-        self.sensors.append(cameraBR)
+        #self.sensors['bev']=bev
 
-
-
-
-        for i, sensor in enumerate(self.sensors):
-            sensor.listen(lambda image ,id=i:  self.process_image(image, id))
+        self.sensors['cameraFL']=cameraFL
+        self.sensors['camera']=camera
+        self.sensors['cameraFR']=cameraFR
+        self.sensors['cameraBL']=cameraBL
+        self.sensors['cameraB']=cameraB
+        self.sensors['cameraBR']=cameraBR
+        #self.sensors['lidar']=lidar
 
 
-        # cameraFL.listen(lambda image: self.process_image(image, 'cameraFL'))
-        # cameraFR.listen(lambda image: self.process_image(image, 'cameraFR'))
-        # cameraBL.listen(lambda image: self.process_image(image, 'cameraBL'))
-        # cameraBR.listen(lambda image: self.process_image(image, 'cameraBR'))
-        # camera.listen(lambda image: self.process_image(image, 'camera'))
-        # cameraB.listen(lambda image: self.process_image(image, 'cameraB'))
-        # cameraT.listen(lambda image: self.process_image(image, 'cameraT'))
+        # sensor.listen(lambda image ,id=i:  Capturer.process_image(weak_self,image, id))
 
-        self.output_lines.append(f"capture time: {time.perf_counter()- start_time} seconds")
-    def process_image(self,image, camera_name):
-        start_time = time.perf_counter()
-        # 将图像数据转换为 numpy 数组
-        if camera_name==0:
-            image.convert(cc.CityScapesPalette)
-        else: 
-            image.convert(cc.Raw)
-        image_data = np.frombuffer(image.raw_data, dtype=np.dtype("uint8"))
-        image_data = np.reshape(image_data, (image.height, image.width, 4))
+        # saver = ImageSaver(self.sensors)
+        # saver.start()
+        for sensor_name, sensor in self.sensors.items(): 
+            sensor.listen(lambda image, sensor_name=sensor_name: self.process_image(image, sensor_name))
 
-        # 转换为 BGR 格式以供 OpenCV 使用
-        image_data = image_data[:, :, :3]
-        image_data = image_data[:, :, ::-1]
-        # image.save_to_disk('_out%01d/%08d' % (camera_name, image.frame))
-        # self.frames[camera_name].append(image)
-        # 存储这一帧
-
-        self.output_lines.append(f"process_image time: {time.perf_counter()- start_time} seconds")
-
-    # def combine_frames_and_write(self):
-    #     start_time = time.perf_counter()
-    #     # 首先确保我们有每个摄像头的帧
-    #     self.frames1
-    #     if all(frame is not None for frame in self.last_frames.values()):
-    #         # 创建一个空的大图像
-    #         combined_image = np.zeros((self.image_height * 2, self.image_width * 4, 3), dtype=np.uint8)
-
-    #         # 将每个摄像头的帧复制到大图像的相应位置
-    #         combined_image[0:self.image_height, 0:self.image_width] = self.last_frames['cameraFL']
-    #         combined_image[0:self.image_height, self.image_width:self.image_width*2] = self.last_frames['camera']
-    #         combined_image[0:self.image_height, self.image_width*2:self.image_width*3] = self.last_frames['cameraFR']
-    #         combined_image[self.image_height:self.image_height*2, 0:self.image_width] = self.last_frames['cameraBL']
-    #         combined_image[self.image_height:self.image_height*2, self.image_width:self.image_width*2] = self.last_frames['cameraB']
-    #         combined_image[self.image_height:self.image_height*2, self.image_width*2:self.image_width*3] = self.last_frames['cameraBR']
-    #         combined_image[0:self.image_height*2, self.image_width*3:self.image_width*4] = self.last_frames['cameraT']
-
-    #         # 将大图像写入视频文件
-    #         # self.out.write(combined_image)
-    #         self.frames.append(combined_image)
-    #     self.output_lines.append(f"combine_frames_and_write time: {time.perf_counter()- start_time} seconds")
-
-    def save_to_disk(self):
-        if self.frames:
-            # Create a VideoWriter object to save the frames as a video file
-            
-            for i, cam in self.frames.items():
-                out = cv2.VideoWriter("out%1d.avi"% i, cv2.VideoWriter_fourcc(*'MJPG'), 10, (cam[0].width, cam[0].height))
-                for frame in cam:
-                    image_data = np.frombuffer(frame.raw_data, dtype=np.dtype("uint8"))
-                    image_data = np.reshape(image_data, (frame.height, frame.width, 4))
-                    # 转换为 BGR 格式以供 OpenCV 使用
-                    image_data = image_data[:, :, :3]
-                    out.write(image_data)
-            # for frame in self.frames[2]:
-            #     frame.save_to_disk('_out%01d/%08d' % (2, frame.frame))
-
-            # # Release the VideoWriter object
-                out.release()
-            output = "\n".join(self.output_lines)
-
-# 打印输出
-            print(output)
-
+ 
     
+    def process_image(self,image, sensor_name):
+        # print(camera_name)
+        os.makedirs('out/{}'.format(sensor_name), exist_ok=True)  
+        # 将图像数据转换为 numpy 数组
+        if sensor_name=='lidar':
+            image.save_to_disk('out/{}/{:08d}'.format(sensor_name, image.frame))
+            # lidar_data = np.frombuffer(image.raw_data, dtype=np.float32)
+            # lidar_data = np.reshape(lidar_data, (image.height, image.width, -1))
+            # np.save('out/{}/{}.npy'.format(sensor_name, image.frame), lidar_data)
+
+        else:
+            if sensor_name=='bev':
+                fov=2
+                image.convert(cc.CityScapesPalette)
+            elif sensor_name=='camera' or sensor_name=='cameraB': 
+                image.convert(cc.Raw)
+                fov=120
+            else:
+                image.convert(cc.Raw)
+                fov=75
+            image.save_to_disk('out/{}/{:08d}.png'.format(sensor_name, image.frame))
+            # image_data = np.frombuffer(image.raw_data, dtype=np.dtype("uint8"))
+            # image_data = np.reshape(image_data, (image.height, image.width, 4))
+            
+            # # 转换为 BGR 格式以供保存为BMP图像
+            # image_data = image_data[:, :, :3]
+            # image_data = image_data[:, :, ::-1]
+        
+            # # 保存图像为BMP格式
+            # image_bmp = Image.fromarray(image_data)
+            # image_bmp.save('out/{}/{:08d}.bmp'.format(sensor_name, image.frame))
+
+            # self.get2dbox(sensor_name,image.frame,fov)
+          
+
+
+    def get2dbox(self,sensor_name,frame,fov):
+        writer = Writer('out/{}/{:08d}'.format(sensor_name, frame) , self.image_width, self.image_height)
+        world_2_camera = np.array(self.sensors[sensor_name].get_transform().get_inverse_matrix())
+        K=self.build_projection_matrix(self.image_width,self.image_height,fov)
+
+        for npc in self.world.get_actors().filter('*vehicle*'):
+            if npc.id != self.player.id:
+                bb = npc.bounding_box
+                dist = npc.get_transform().location.distance(self.player.get_transform().location)
+                if dist < 50:
+                    forward_vec = self.player.get_transform().get_forward_vector()
+                    ray = npc.get_transform().location - self.player.get_transform().location
+                    if forward_vec.dot(ray) > 1:
+                        verts = [v for v in bb.get_world_vertices(npc.get_transform())]
+                        x_max = -10000
+                        x_min = 10000
+                        y_max = -10000
+                        y_min = 10000
+                        for vert in verts:
+                            p = self.get_image_point(vert, K , world_2_camera)
+                            if p[0] > x_max:
+                                x_max = p[0]
+                            if p[0] < x_min:
+                                x_min = p[0]
+                            if p[1] > y_max:
+                                y_max = p[1]
+                            if p[1] < y_min:
+                                y_min = p[1]
+
+                        # Add the object to the frame (ensure it is inside the image)
+                        if x_min > 0 and x_max < self.image_width and y_min > 0 and y_max < self.image_height: 
+                            writer.addObject('vehicle', x_min, y_min, x_max, y_max)
+        for bb in self.sign_bbox_set:
+            # Filter for distance from ego vehicle
+            if bb.location.distance(self.player.get_transform().location) < 50:
+                # Calculate the dot product between the forward vector
+                # of the vehicle and the vector between the vehicle
+                # and the bounding box. We threshold this dot product
+                # to limit to drawing bounding boxes IN FRONT OF THE CAMERA
+                forward_vec = self.player.get_transform().get_forward_vector()
+                ray = bb.location - self.player.get_transform().location
+
+                if forward_vec.dot(ray) > 1:
+                    verts = [v for v in bb.get_world_vertices(carla.Transform())]
+                    x_max = -10000
+                    x_min = 10000
+                    y_max = -10000
+                    y_min = 10000
+                    for vert in verts:
+                        p = self.get_image_point(vert, K, world_2_camera)
+                        if p[0] > x_max:
+                            x_max = p[0]
+                        if p[0] < x_min:
+                            x_min = p[0]
+                        if p[1] > y_max:
+                            y_max = p[1]
+                        if p[1] < y_min:
+                            y_min = p[1]
+
+                    # Add the object to the frame (ensure it is inside the image)
+                    if x_min > 0 and x_max < self.image_width and y_min > 0 and y_max < self.image_height:
+                        writer.addObject('traffic_sign', x_min, y_min, x_max, y_max)
+
+        for bb in self.light_bbox_set:
+            # Filter for distance from ego vehicle
+            if bb.location.distance(self.player.get_transform().location) < 50:
+                # Calculate the dot product between the forward vector
+                # of the vehicle and the vector between the vehicle
+                # and the bounding box. We threshold this dot product
+                # to limit to drawing bounding boxes IN FRONT OF THE CAMERA
+                forward_vec = self.player.get_transform().get_forward_vector()
+                ray = bb.location - self.player.get_transform().location
+
+                if forward_vec.dot(ray) > 1:
+                    verts = [v for v in bb.get_world_vertices(carla.Transform())]
+                    x_max = -10000
+                    x_min = 10000
+                    y_max = -10000
+                    y_min = 10000
+                    for vert in verts:
+                        p = self.get_image_point(vert, K, world_2_camera)
+                        if p[0] > x_max:
+                            x_max = p[0]
+                        if p[0] < x_min:
+                            x_min = p[0]
+                        if p[1] > y_max:
+                            y_max = p[1]
+                        if p[1] < y_min:
+                            y_min = p[1]
+
+                    # Add the object to the frame (ensure it is inside the image)
+                    if x_min > 0 and x_max < self.image_width and y_min > 0 and y_max < self.image_height:
+                        writer.addObject('traffic_light', x_min, y_min, x_max, y_max)
+            # Save the bounding boxes in the scene
+        writer.save('out/{}/{:08d}'.format(sensor_name, frame) + '.xml')
+
     def destroy(self):
-        for sensor in self.sensors:
+        for sensor_name, sensor in self.sensors.items(): 
             if sensor is not None:
                 sensor.stop()
                 sensor.destroy()
 
-    
+class ImageSaver:
+    def __init__(self, sensors):
+        self.sensors = sensors
+        self.image_queues = {}
+        self.is_running = True
+
+    def start(self):
+        for sensor_name, sensor in self.sensors.items():
+            self.image_queues[sensor_name] = Queue()
+            sensor.listen(lambda image, sensor_name=sensor_name: self.image_queues[sensor_name].put(image))
+
+            save_thread = Thread(target=self.save_images, args=(sensor_name,))
+            save_thread.start()
+
+    def stop(self):
+        self.is_running = False
+
+    def save_images(self, sensor_name):
+        os.makedirs('out/{}'.format(sensor_name), exist_ok=True)
+
+        while self.is_running:
+            if not self.image_queues[sensor_name].empty():
+                image = self.image_queues[sensor_name].get()
+                self.process_image(image, sensor_name)
+                self.image_queues[sensor_name].task_done()
+
+    def process_image(self, image, sensor_name):
+        image.save_to_disk('out/{}/{:08d}.png'.format(sensor_name, image.frame))
+        
+
+class CarLocationRecorder(threading.Thread):
+    def __init__(self, world, event):
+        threading.Thread.__init__(self)
+        self.world = world
+        self.event = event
+        self.stop_event = threading.Event()
+
+    def run(self):
+        os.makedirs('out/car_locations', exist_ok=True)  
+        while not self.stop_event.is_set():
+            self.event.wait()  # 等待主线程的同步信号
+            self.event.clear()
+            # 记录汽车位置的逻辑
+            world_snapshot = self.world.get_snapshot()
+            timestamp = world_snapshot.timestamp
+            current_tick = timestamp.frame
+            file_name = 'out/car_locations/{:08d}.csv'.format(current_tick)
+            with open(file_name, 'w', newline='') as f:
+                writer = csv.writer(f)
+                writer.writerow(['Vehicle ID', 'min_point', 'max_point'])
+                for vehicle in self.world.get_actors().filter('vehicle.*'):
+                    bounding_box = vehicle.bounding_box
+
+                    min_point = bounding_box.location - bounding_box.extent
+                    max_point = bounding_box.location + bounding_box.extent
+
+                    writer.writerow([vehicle.id, min_point, max_point])
+
+    def stop(self):
+        self.stop_event.set()
+
+
 # ==============================================================================
 # -- game_loop() ---------------------------------------------------------------
 # ==============================================================================
@@ -1358,15 +1523,15 @@ def game_loop(args):
     world = None
     original_settings = None
 
-
     try:
+        shutil.rmtree('./out')
+        os.makedirs('./out', exist_ok=True)
         client = carla.Client(args.host, args.port)
-        client.set_timeout(20.0)
+        client.set_timeout(5.0)
 
-        # sim_world = client.get_world()
         sim_world=client.load_world('Town10HD_Opt')
         sim_world.unload_map_layer(carla.MapLayer.Foliage)
-
+        traffic_manager = client.get_trafficmanager()
         if args.sync:
             original_settings = sim_world.get_settings()
             settings = sim_world.get_settings()
@@ -1374,9 +1539,23 @@ def game_loop(args):
                 settings.synchronous_mode = True
                 settings.fixed_delta_seconds = 0.1
             sim_world.apply_settings(settings)
-
-            traffic_manager = client.get_trafficmanager()
             traffic_manager.set_synchronous_mode(True)
+
+        spawn_points = world.get_map().get_spawn_points()
+
+        # Create route 1 from the chosen spawn points
+        route_1_indices = [129, 28, 124, 33, 97, 119, 58, 154, 147]
+        route_1 = []
+        for ind in route_1_indices:
+            route_1.append(spawn_points[ind].location)
+
+        traffic_manager.update_vehicle_lights(world.player, True)
+        traffic_manager.random_left_lanechange_percentage(world.player, 0)
+        traffic_manager.random_right_lanechange_percentage(world.player, 0)
+        traffic_manager.auto_lane_change(world.player, False)
+        traffic_manager.set_path(world.player, route_1)
+
+
 
         if args.autopilot and not sim_world.get_settings().synchronous_mode:
             print("WARNING: You are currently in asynchronous mode and could "
@@ -1398,7 +1577,20 @@ def game_loop(args):
             sim_world.wait_for_tick()
 
         clock = pygame.time.Clock()
+
+        event = threading.Event()
+        recorder_thread = CarLocationRecorder(sim_world, event)
+        recorder_thread.start() 
+
+
+        def run_generate_traffic():
+            generate_traffic.main()
+
+        traffic_thread = threading.Thread(target=run_generate_traffic)
+        traffic_thread.start()
+        
         while True:
+            #event.set() 
             if args.sync:
                 sim_world.tick()
             clock.tick_busy_loop(60)
@@ -1406,8 +1598,6 @@ def game_loop(args):
                 return
             world.tick(clock)
             world.render(display)
-            # world.capturer.combine_frames_and_write()
-
             pygame.display.flip()
 
     finally:
@@ -1420,9 +1610,11 @@ def game_loop(args):
 
         if world is not None:
             world.destroy()
-
-        # world.capturer.save_to_disk()
-
+        recorder_thread.stop()
+        recorder_thread.join()
+        traffic_thread.stop()
+        traffic_thread.join()
+        # saver.stop()
         pygame.quit()
 
 
@@ -1432,6 +1624,7 @@ def game_loop(args):
 
 
 def main():
+
     argparser = argparse.ArgumentParser(
         description='CARLA Manual Control Client')
     argparser.add_argument(
@@ -1442,7 +1635,7 @@ def main():
     argparser.add_argument(
         '--host',
         metavar='H',
-        default='10.219.127.175',
+        default='127.0.0.1',
         help='IP of the host server (default: 127.0.0.1)')
     argparser.add_argument(
         '-p', '--port',
@@ -1483,9 +1676,9 @@ def main():
     argparser.add_argument(
         '--sync',
         action='store_true',
-        default=False,
+        default=True,
         help='Activate synchronous mode execution')
-    args = argparser.parse_args()
+    args = argparser.parse_args() 
 
     args.width, args.height = [int(x) for x in args.res.split('x')]
 
